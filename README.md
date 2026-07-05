@@ -7,7 +7,7 @@
 [![Swift](https://img.shields.io/badge/Swift-5.9-F05138?style=for-the-badge&logo=swift&logoColor=white)](https://swift.org)
 [![SwiftUI](https://img.shields.io/badge/SwiftUI-000000?style=for-the-badge&logo=swift&logoColor=white)](https://developer.apple.com/xcode/swiftui/)
 [![Platform](https://img.shields.io/badge/platform-macOS-lightgrey?style=for-the-badge&logo=apple&logoColor=white)](https://www.apple.com/macos/)
-[![License](https://img.shields.io/badge/license-MIT-blue?style=for-the-badge)](LICENSE)
+
 
 <img src="https://readme-typing-svg.demolab.com?font=Fira+Code&size=18&pause=1000&color=00FF9C&center=true&vCenter=true&width=500&lines=Generate.+Visualize.+Export.;Sine+%E2%80%A2+Square+%E2%80%A2+Sawtooth+%E2%80%A2+Triangle;Built+with+SwiftUI+%2B+AVFoundation" alt="Typing SVG" />
 
@@ -29,7 +29,7 @@ Whether you're testing audio equipment, calibrating hardware, exploring signal p
 
 | Sine | Square | Sawtooth | Triangle |
 |:---:|:---:|:---:|:---:|
-| 〰️ | ⏹️ | 📈 | 🔺 |
+| ~ | ⏹️ | 📈 | 🔺 |
 | Smooth, pure tone | Harmonic-rich, digital | Bright, buzzy | Soft, mellow |
 
 </div>
@@ -100,6 +100,6 @@ Build and run in Xcode — macOS only, no external dependencies required.
 
 <div align="center">
 
-Made with 🎧 by [Parker](https://github.com/sloth1102)
+Made by [Sloth](https://github.com/sloth1102)
 
 </div>
