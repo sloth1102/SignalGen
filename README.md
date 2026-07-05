@@ -1,15 +1,26 @@
 <div align="center">
 
 # 〜 SignalGen 〜
-
 ### A native SwiftUI audio signal generator for macOS
 
 [![Swift](https://img.shields.io/badge/Swift-5.9-F05138?style=for-the-badge&logo=swift&logoColor=white)](https://swift.org)
 [![SwiftUI](https://img.shields.io/badge/SwiftUI-000000?style=for-the-badge&logo=swift&logoColor=white)](https://developer.apple.com/xcode/swiftui/)
 [![Platform](https://img.shields.io/badge/platform-macOS-lightgrey?style=for-the-badge&logo=apple&logoColor=white)](https://www.apple.com/macos/)
 
-
 <img src="https://readme-typing-svg.demolab.com?font=Fira+Code&size=18&pause=1000&color=00FF9C&center=true&vCenter=true&width=500&lines=Generate.+Visualize.+Export.;Sine+%E2%80%A2+Square+%E2%80%A2+Sawtooth+%E2%80%A2+Triangle;Built+with+SwiftUI+%2B+AVFoundation" alt="Typing SVG" />
+
+</div>
+
+---
+
+## 📸 Screenshots
+
+<div align="center">
+
+<img src="https://github.com/user-attachments/assets/a0f827ce-43c4-42d3-a6fb-d8e808b23b24" alt="Sawtooth" width="49%" />
+<img src="https://github.com/user-attachments/assets/8d64247c-4ed1-4f40-bcec-bd6aacd755cf" alt="Sine" width="49%" />
+<img src="https://github.com/user-attachments/assets/0a95ef02-5034-43c8-a2e4-22f9888b5641" alt="Triangle" width="49%" />
+<img src="https://github.com/user-attachments/assets/73ae231d-f366-45c2-928d-c8fa9f32ed8e" alt="Square" width="49%" />
 
 </div>
 
