@@ -23,13 +23,12 @@ Whether you're testing audio equipment, calibrating hardware, exploring signal p
 
 ---
 
-## 🌊 Waveforms
+## Waveforms
 
 <div align="center">
 
 | Sine | Square | Sawtooth | Triangle |
 |:---:|:---:|:---:|:---:|
-| ~ | ⏹️ | 📈 | 🔺 |
 | Smooth, pure tone | Harmonic-rich, digital | Bright, buzzy | Soft, mellow |
 
 </div>
@@ -38,7 +37,7 @@ Each waveform is rendered live with adjustable **frequency**, **amplitude**, and
 
 ---
 
-## 📤 Export Formats
+## Export Formats
 
 SignalGen supports exporting your generated signal directly to disk via `AVFoundation`, with support for:
 
@@ -77,7 +76,7 @@ Built with `SwiftUI` for the interface, and `AVFoundation` for audio buffer gene
 
 ---
 
-## 🚀 Getting Started
+## Getting Started
 
 ```bash
 git clone https://github.com/sloth1102/SignalGen.git
