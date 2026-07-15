@@ -86,12 +86,19 @@ struct ExportView: View {
                                 )
                         }
                         .buttonStyle(.plain)
+                        .opacity(fmt.requiresThirdPartyEncoder && selectedFormat != fmt ? 0.4 : 1.0)
                     }
                 }
                 .frame(maxWidth: .infinity)
 
                 // Note for compressed formats
-                if selectedFormat.isCompressed {
+                if selectedFormat.requiresThirdPartyEncoder {
+                    Text("macOS has no built-in encoder for this format — export will fail")
+                        .font(.system(size: 9, design: .monospaced))
+                        .foregroundColor(.red.opacity(0.7))
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .multilineTextAlignment(.center)
+                } else if selectedFormat.isCompressed {
                     Text("Compressed format — estimated size is approximate")
                         .font(.system(size: 9, design: .monospaced))
                         .foregroundColor(.orange.opacity(0.6))

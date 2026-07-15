@@ -1,5 +1,7 @@
 import AVFoundation
+import AudioToolbox
 import Combine
+import lame
 
 enum Waveform: String, CaseIterable {
     case sine     = "Sine"
@@ -192,6 +194,16 @@ class AudioEngine: ObservableObject {
         }
         
         var label: String { rawValue }
+
+        /// Formats macOS has no built-in encoder for and that we haven't
+        /// wired up a third-party encoder for. MP3 is handled by a bundled
+        /// LAME encoder (see exportMP3).
+        var requiresThirdPartyEncoder: Bool {
+            switch self {
+            case .mp2, .opus, .ac3: return true
+            default: return false
+            }
+        }
     }
     
     func estimatedFileSizeBytes(duration: Double, format: ExportFormat) -> Int {
@@ -211,10 +223,78 @@ class AudioEngine: ObservableObject {
             if exportPhase >= 2.0 * Double.pi { exportPhase -= 2.0 * Double.pi }
         }
         
-        if format.isCompressed {
+        if format == .mp3 {
+            try exportMP3(samples: samples, sampleRate: exportSampleRate, to: url)
+        } else if format.isCompressed {
             try exportCompressed(samples: samples, sampleRate: exportSampleRate, format: format, to: url)
         } else {
             try exportPCM(samples: samples, sampleRate: exportSampleRate, format: format, to: url)
+        }
+    }
+
+    /// Encodes to MP3 using the bundled LAME encoder (added via SPM — see
+    /// project setup notes). AVFoundation has no MP3 encoder on macOS at
+    /// all, so this doesn't go through AVAssetWriter/AVAudioFile like the
+    /// other formats.
+    private func exportMP3(samples: [Float], sampleRate: Double, to url: URL) throws {
+        guard let gfp = lame_init() else {
+            throw NSError(domain: "AudioEngine", code: 10,
+                          userInfo: [NSLocalizedDescriptionKey: "Could not initialize the MP3 encoder"])
+        }
+        defer { lame_close(gfp) }
+
+        lame_set_in_samplerate(gfp, Int32(sampleRate))
+        lame_set_num_channels(gfp, 1)
+        lame_set_brate(gfp, 192)   // CBR 192 kbps — matches the size estimate shown in Export
+        lame_set_quality(gfp, 2)   // 0 = best/slowest, 9 = worst/fastest; 2 is effectively best quality at a sane speed
+
+        guard lame_init_params(gfp) >= 0 else {
+            throw NSError(domain: "AudioEngine", code: 11,
+                          userInfo: [NSLocalizedDescriptionKey: "Could not configure the MP3 encoder"])
+        }
+
+        FileManager.default.createFile(atPath: url.path, contents: nil)
+        guard let handle = FileHandle(forWritingAtPath: url.path) else {
+            throw NSError(domain: "AudioEngine", code: 12,
+                          userInfo: [NSLocalizedDescriptionKey: "Could not open output file for MP3 export"])
+        }
+        defer { try? handle.close() }
+
+        let chunkFrames = 8192
+        // LAME's documented worst-case output buffer size for a given input chunk.
+        let outBufSize = Int(1.25 * Double(chunkFrames)) + 7200
+        var outBuffer = [UInt8](repeating: 0, count: outBufSize)
+
+        var offset = 0
+        while offset < samples.count {
+            let count = min(chunkFrames, samples.count - offset)
+            let written: Int32 = samples.withUnsafeBufferPointer { pcm -> Int32 in
+                let chunkPtr = pcm.baseAddress!.advanced(by: offset)
+                return outBuffer.withUnsafeMutableBufferPointer { out in
+                    // Mono: LAME wants a left-channel pointer; we pass the
+                    // same pointer as "right" since some builds still read it.
+                    lame_encode_buffer_ieee_float(gfp, chunkPtr, chunkPtr, Int32(count), out.baseAddress, Int32(outBufSize))
+                }
+            }
+            guard written >= 0 else {
+                throw NSError(domain: "AudioEngine", code: 13,
+                              userInfo: [NSLocalizedDescriptionKey: "MP3 encoding failed (code \(written))"])
+            }
+            if written > 0 {
+                handle.write(Data(bytes: outBuffer, count: Int(written)))
+            }
+            offset += count
+        }
+
+        let flushed = outBuffer.withUnsafeMutableBufferPointer { out in
+            lame_encode_flush(gfp, out.baseAddress, Int32(outBufSize))
+        }
+        guard flushed >= 0 else {
+            throw NSError(domain: "AudioEngine", code: 14,
+                          userInfo: [NSLocalizedDescriptionKey: "MP3 flush failed (code \(flushed))"])
+        }
+        if flushed > 0 {
+            handle.write(Data(bytes: outBuffer, count: Int(flushed)))
         }
     }
     
@@ -223,13 +303,15 @@ class AudioEngine: ObservableObject {
         
         switch format {
         case .flac:
+            // FLAC's file-level settings describe a *compressed* format —
+            // no linear-PCM keys belong here. Mixing them in (as before)
+            // produced an AVAudioFormat that couldn't back a PCM write
+            // buffer, which is what crashed a few lines down.
             settings = [
-                AVFormatIDKey:             kAudioFormatFLAC,
-                AVSampleRateKey:           sampleRate,
-                AVNumberOfChannelsKey:     1,
-                AVLinearPCMBitDepthKey:    24,
-                AVLinearPCMIsFloatKey:     false,
-                AVLinearPCMIsBigEndianKey: false
+                AVFormatIDKey:            kAudioFormatFLAC,
+                AVSampleRateKey:          sampleRate,
+                AVNumberOfChannelsKey:    1,
+                AVEncoderBitDepthHintKey: 24
             ]
         default:
             settings = [
@@ -243,18 +325,34 @@ class AudioEngine: ObservableObject {
             ]
         }
         
-        guard let avFormat = AVAudioFormat(settings: settings) else {
+        // Validate up front so a bad settings dict surfaces as a normal,
+        // catchable Swift error instead of failing deeper inside AVFoundation.
+        guard AVAudioFormat(settings: settings) != nil else {
             throw NSError(domain: "AudioEngine", code: 1,
-                          userInfo: [NSLocalizedDescriptionKey: "Could not create audio format"])
+                          userInfo: [NSLocalizedDescriptionKey: "Could not create a valid \(format.rawValue) format"])
         }
-        
+
+        // Buffers we hand to AVAudioFile must always be plain float32 PCM —
+        // that's the "processing format" AVAudioFile expects, and it
+        // converts internally into whatever `settings` describes (PCM at
+        // another depth, or losslessly into FLAC). Previously this buffer
+        // was built from the *file's* target format, which is only
+        // correct by coincidence for the plain-PCM formats.
+        guard let bufferFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32,
+                                                sampleRate: sampleRate,
+                                                channels: 1,
+                                                interleaved: false) else {
+            throw NSError(domain: "AudioEngine", code: 1,
+                          userInfo: [NSLocalizedDescriptionKey: "Could not create PCM buffer format"])
+        }
+
         let file = try AVAudioFile(forWriting: url, settings: settings)
         let bufferSize = 4096
         var offset = 0
         
         while offset < samples.count {
             let count = min(bufferSize, samples.count - offset)
-            guard let buffer = AVAudioPCMBuffer(pcmFormat: avFormat, frameCapacity: AVAudioFrameCount(count)) else { break }
+            guard let buffer = AVAudioPCMBuffer(pcmFormat: bufferFormat, frameCapacity: AVAudioFrameCount(count)) else { break }
             buffer.frameLength = AVAudioFrameCount(count)
             let ch = buffer.floatChannelData![0]
             for i in 0..<count { ch[i] = samples[offset + i] }
@@ -268,7 +366,21 @@ class AudioEngine: ObservableObject {
             throw NSError(domain: "AudioEngine", code: 2,
                           userInfo: [NSLocalizedDescriptionKey: "No compressed format ID for \(format.rawValue)"])
         }
-        
+
+        // AVAssetWriterInput(mediaType:outputSettings:) raises an
+        // Objective-C exception — not a Swift error — if you hand it a
+        // formatID macOS has no encoder for. Swift's do/catch cannot catch
+        // that, so the app terminates. mp3/mp2/ac3 (and opus on most
+        // systems) have no registered encoder component on macOS: Apple
+        // ships decoders for them but never shipped encoders. Check first
+        // and fail with an ordinary, catchable error instead of crashing.
+        guard hasEncoderComponent(for: formatID) else {
+            throw NSError(domain: "AudioEngine", code: 6, userInfo: [
+                NSLocalizedDescriptionKey:
+                    "macOS has no built-in \(format.rawValue) encoder — Apple only ships a decoder for this format, so AVFoundation can't write it. Try M4A, WAV, AIFF, CAF, AU, or FLAC instead."
+            ])
+        }
+
         let outputSettings: [String: Any] = [
             AVFormatIDKey:         formatID,
             AVSampleRateKey:       sampleRate,
@@ -318,7 +430,7 @@ class AudioEngine: ObservableObject {
                 let dataSize = count * MemoryLayout<Float>.size
                 
                 var chunk = Array(samples[offset..<(offset + count)])
-                chunk.withUnsafeMutableBytes { raw in
+                _ = chunk.withUnsafeMutableBytes { raw in
                     CMBlockBufferCreateWithMemoryBlock(
                         allocator: nil,
                         memoryBlock: raw.baseAddress,
@@ -362,5 +474,20 @@ class AudioEngine: ObservableObject {
             throw writer.error ?? NSError(domain: "AudioEngine", code: 5,
                                           userInfo: [NSLocalizedDescriptionKey: "Export failed for \(format.rawValue)"])
         }
+    }
+
+    /// Asks CoreAudio's component registry directly (no AVFoundation, no
+    /// exceptions possible) whether an encoder exists for `formatID` on
+    /// this machine. If Apple ever adds one, this starts returning true
+    /// automatically — nothing here needs to change.
+    private func hasEncoderComponent(for formatID: AudioFormatID) -> Bool {
+        var description = AudioComponentDescription(
+            componentType: kAudioEncoderComponentType,
+            componentSubType: formatID,
+            componentManufacturer: 0,
+            componentFlags: 0,
+            componentFlagsMask: 0
+        )
+        return AudioComponentFindNext(nil, &description) != nil
     }
 }

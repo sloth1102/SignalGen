@@ -11,3 +11,4 @@ build/
 *.ipa
 *.dSYM.zip
 *.dSYM
+**/xcshareddata/
